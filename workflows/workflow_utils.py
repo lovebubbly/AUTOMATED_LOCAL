@@ -302,6 +302,151 @@ def auto_detect_node_ids(workflow: dict) -> dict:
     return suggestions
 
 
+# ============================================================
+# VIDEO WORKFLOW UTILITIES
+# ============================================================
+
+def set_video_start_frame(workflow: dict, node_id: str, filename: str) -> dict:
+    """
+    Set the start frame image for video generation.
+    
+    Args:
+        workflow: Workflow dictionary
+        node_id: Start frame LoadImage node ID
+        filename: Uploaded image filename
+        
+    Returns:
+        Modified workflow
+    """
+    return set_image_input(workflow, node_id, filename)
+
+
+def set_video_end_frame(workflow: dict, node_id: str, filename: str) -> dict:
+    """
+    Set the end frame image for video generation (optional for I2V).
+    
+    Args:
+        workflow: Workflow dictionary
+        node_id: End frame LoadImage node ID
+        filename: Uploaded image filename
+        
+    Returns:
+        Modified workflow
+    """
+    return set_image_input(workflow, node_id, filename)
+
+
+def set_num_frames(workflow: dict, node_id: str, num_frames: int) -> dict:
+    """
+    Set the number of frames for video generation.
+    
+    Args:
+        workflow: Workflow dictionary
+        node_id: PrimitiveInt node ID for frame count
+        num_frames: Number of frames to generate (e.g., 81 for ~5 seconds at 16fps)
+        
+    Returns:
+        Modified workflow
+    """
+    node_id = str(node_id)
+    if node_id not in workflow:
+        raise KeyError(f"Node ID '{node_id}' not found in workflow")
+    
+    node = workflow[node_id]
+    
+    if "inputs" in node:
+        node["inputs"]["value"] = num_frames
+    
+    return workflow
+
+
+def set_video_output_prefix(workflow: dict, node_id: str, prefix: str) -> dict:
+    """
+    Set the output filename prefix for VHS_VideoCombine node.
+    
+    Args:
+        workflow: Workflow dictionary
+        node_id: VHS_VideoCombine node ID
+        prefix: Filename prefix (e.g., "block_001/video")
+        
+    Returns:
+        Modified workflow
+    """
+    node_id = str(node_id)
+    if node_id not in workflow:
+        raise KeyError(f"Node ID '{node_id}' not found in workflow")
+    
+    node = workflow[node_id]
+    
+    if "inputs" in node:
+        node["inputs"]["filename_prefix"] = prefix
+    
+    return workflow
+
+
+def configure_video_workflow(
+    workflow: dict,
+    node_map: dict,
+    prompt: str,
+    start_frame_filename: Optional[str] = None,
+    end_frame_filename: Optional[str] = None,
+    num_frames: int = 81,
+    output_prefix: str = "output/video",
+    seed: Optional[int] = None
+) -> dict:
+    """
+    Configure a video workflow with all necessary parameters.
+    
+    Args:
+        workflow: Workflow dictionary (will be cloned)
+        node_map: Node ID mapping from config.py
+        prompt: Motion/action prompt
+        start_frame_filename: Start frame image filename (optional)
+        end_frame_filename: End frame image filename (optional)
+        num_frames: Number of frames to generate (default: 81 = ~5 sec at 16fps)
+        output_prefix: Output filename prefix
+        seed: Random seed (None for random)
+        
+    Returns:
+        Configured workflow copy
+    """
+    wf = clone_workflow(workflow)
+    
+    # Set positive prompt
+    if "positive_prompt_node_id" in node_map:
+        set_text_prompt(wf, node_map["positive_prompt_node_id"], prompt)
+    
+    # Set negative prompt (usually blank for CFG 1)
+    if "negative_prompt_node_id" in node_map:
+        set_text_prompt(wf, node_map["negative_prompt_node_id"], "")
+    
+    # Set start frame
+    if start_frame_filename and "start_frame_node_id" in node_map:
+        set_video_start_frame(wf, node_map["start_frame_node_id"], start_frame_filename)
+    
+    # Set end frame
+    if end_frame_filename and "end_frame_node_id" in node_map:
+        set_video_end_frame(wf, node_map["end_frame_node_id"], end_frame_filename)
+    
+    # Set number of frames
+    if "num_frames_node_id" in node_map:
+        set_num_frames(wf, node_map["num_frames_node_id"], num_frames)
+    
+    # Set output prefix
+    if "video_combine_node_id" in node_map:
+        set_video_output_prefix(wf, node_map["video_combine_node_id"], output_prefix)
+    
+    # Set seed
+    if "sampler_node_id" in node_map:
+        seed_input = node_map.get("seed_input_name", "seed")
+        if seed is not None:
+            set_seed(wf, node_map["sampler_node_id"], seed, seed_input)
+        else:
+            randomize_seed(wf, node_map["sampler_node_id"], seed_input)
+    
+    return wf
+
+
 # CLI helper for workflow analysis
 if __name__ == "__main__":
     import sys

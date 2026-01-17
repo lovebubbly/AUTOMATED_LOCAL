@@ -36,17 +36,21 @@ NODE_MAP = {
     },
     
     # -----------------------------------------------------------
-    # Video Generation Workflow (video_gen.json) - Future
+    # Video Generation Workflow (video_gen.json) - WAN 2.2 VACE
     # -----------------------------------------------------------
     "video_gen": {
-        # Wan 2.2 / AnimateDiff based workflow
-        "positive_prompt_node_id": "TBD",
-        "negative_prompt_node_id": "TBD",
-        "start_frame_node_id": "TBD",        # Start frame image input
-        "end_frame_node_id": "TBD",          # End frame image input (optional)
-        "motion_prompt_node_id": "TBD",      # Motion/animation prompt
-        "sampler_node_id": "TBD",
+        # WAN 2.2 VACE T2V/I2V Workflow (API Format)
+        "positive_prompt_node_id": "9",       # CLIPTextEncode - Positive Prompt
+        "negative_prompt_node_id": "10",      # CLIPTextEncode - Negative Prompt (blank for CFG 1)
+        "start_frame_node_id": None,          # LoadImage - Start Frame (not in current workflow)
+        "end_frame_node_id": None,            # LoadImage - End Frame (not in current workflow)
+        "num_frames_node_id": "48",           # PrimitiveInt - Number of Frames
+        "vace_to_video_node_id": "28",        # WanVaceToVideo (width, height, length, strength)
+        "sampler_node_id": "8",               # KSampler
         "seed_input_name": "seed",
+        "checkpoint_node_id": "26",           # CheckpointLoaderSimple
+        "vae_decode_node_id": "11",           # VAEDecode
+        "video_combine_node_id": "39",        # VHS_VideoCombine - Output
     }
 }
 
