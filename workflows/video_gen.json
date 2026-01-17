@@ -71,6 +71,15 @@
       "title": "VAE 디코드"
     }
   },
+  "16": {
+    "inputs": {
+      "image": "Untitled.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Start Frame (Optional)"
+    }
+  },
   "26": {
     "inputs": {
       "ckpt_name": "wan2.2-rapid-mega-aio-v12.safetensors"
@@ -101,6 +110,14 @@
       "vae": [
         "26",
         2
+      ],
+      "control_video": [
+        "34",
+        0
+      ],
+      "control_masks": [
+        "34",
+        1
       ]
     },
     "class_type": "WanVaceToVideo",
@@ -119,6 +136,38 @@
     "class_type": "ModelSamplingSD3",
     "_meta": {
       "title": "모델 샘플링 (SD3)"
+    }
+  },
+  "34": {
+    "inputs": {
+      "num_frames": [
+        "48",
+        0
+      ],
+      "empty_frame_level": 0.5,
+      "start_index": 0,
+      "end_index": -1,
+      "start_image": [
+        "16",
+        0
+      ],
+      "end_image": [
+        "37",
+        0
+      ]
+    },
+    "class_type": "WanVideoVACEStartToEndFrame",
+    "_meta": {
+      "title": "Bypass for T2V, use for I2V"
+    }
+  },
+  "37": {
+    "inputs": {
+      "image": "ComfyUI_temp_zmuag_00002_.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "End Frame (Optional)"
     }
   },
   "39": {

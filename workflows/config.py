@@ -39,12 +39,13 @@ NODE_MAP = {
     # Video Generation Workflow (video_gen.json) - WAN 2.2 VACE
     # -----------------------------------------------------------
     "video_gen": {
-        # WAN 2.2 VACE T2V/I2V Workflow (API Format)
+        # WAN 2.2 VACE I2V Workflow (API Format)
         "positive_prompt_node_id": "9",       # CLIPTextEncode - Positive Prompt
         "negative_prompt_node_id": "10",      # CLIPTextEncode - Negative Prompt (blank for CFG 1)
-        "start_frame_node_id": None,          # LoadImage - Start Frame (not in current workflow)
-        "end_frame_node_id": None,            # LoadImage - End Frame (not in current workflow)
+        "start_frame_node_id": "16",          # LoadImage - Start Frame
+        "end_frame_node_id": "37",            # LoadImage - End Frame
         "num_frames_node_id": "48",           # PrimitiveInt - Number of Frames
+        "vace_node_id": "34",                 # WanVideoVACEStartToEndFrame
         "vace_to_video_node_id": "28",        # WanVaceToVideo (width, height, length, strength)
         "sampler_node_id": "8",               # KSampler
         "seed_input_name": "seed",
