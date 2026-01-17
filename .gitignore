@@ -8,5 +8,5 @@ __pycache__/
 SYSTEM CONTEXT*.md
 SYSTEM CONTEXT*.pdf
 
-# Exclude generated assets
-assets/images/
+# Exclude assets folder (personal data)
+assets/
