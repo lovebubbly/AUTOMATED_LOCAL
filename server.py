@@ -27,7 +27,6 @@ class StartRequest(BaseModel):
 
 # Routes
 @app.get("/api/status")
-@app.get("/api/status")
 def get_status():
     return {
         "is_running": director.is_running,

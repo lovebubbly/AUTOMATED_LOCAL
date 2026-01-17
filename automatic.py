@@ -478,17 +478,41 @@ class Director:
 
     def _run_video_production(self, start_block=1):
         """
-        Video production placeholder.
+        Video production using ComfyUI API with WAN 2.2 VACE workflow.
         
-        TODO: Implement video generation using ComfyUI with Wan 2.2 or AnimateDiff.
-        Currently logs a placeholder message.
+        Uses Start Frame and End Frame images from image production
+        to generate videos with motion prompts.
         """
-        self.log("🎥 Video Production (ComfyUI) - Not yet implemented")
-        self.log("💡 Video generation will use Wan 2.2 workflow in future updates")
+        self.log("🎥 Starting Video Production (WAN 2.2 VACE)...")
         
-        # Placeholder: List available images that would be used for video
+        # Load workflow template
+        try:
+            workflow_path = os.path.join(os.getcwd(), WORKFLOW_VIDEO)
+            workflow_template = load_workflow(workflow_path)
+            self.log(f"   📋 Loaded workflow: {WORKFLOW_VIDEO}")
+        except FileNotFoundError as e:
+            self.log(f"❌ Workflow file not found: {e}")
+            self.log("💡 Please export your video workflow from ComfyUI and save it to workflows/video_gen.json")
+            return
+        except Exception as e:
+            self.log(f"❌ Failed to load workflow: {e}")
+            return
+        
+        # Get node mappings
+        try:
+            node_map = get_node_map("video_gen")
+        except KeyError as e:
+            self.log(f"❌ Node mapping error: {e}")
+            return
+        
+        # Validate node IDs
+        missing_nodes = validate_node_ids(workflow_template, node_map)
+        if missing_nodes:
+            self.log(f"⚠️ Warning: Some node IDs not found in workflow: {missing_nodes}")
+        
         df = pd.read_csv(PRODUCTION_TABLE)
         video_count = 0
+        generated_videos = []
         
         for index, row in df.iterrows():
             if self.stop_requested:
@@ -498,16 +522,107 @@ class Director:
             if int(block_id) < start_block:
                 continue
             
-            image_filename = f"block_{block_id}_start.png"
-            image_path = os.path.join(DOWNLOAD_DIR, image_filename)
+            self.current_block = f"Block {block_id} (Video)"
             
-            if os.path.exists(image_path):
-                video_count += 1
-                self.current_block = f"Block {block_id} (Video)"
-                self.log(f"   📹 [Pending] Block {block_id}: {row['Kling O1 (Motion Prompt)'][:50]}...")
+            # Check for required images
+            start_image_path = os.path.join(DOWNLOAD_DIR, f"block_{block_id}_start.png")
+            end_image_path = os.path.join(DOWNLOAD_DIR, f"block_{block_id}_end.png")
+            
+            if not os.path.exists(start_image_path):
+                self.log(f"   ⚠️ Block {block_id}: Start frame not found, skipping...")
+                continue
+            
+            # Get motion prompt
+            motion_prompt = str(row.get('Kling O1 (Motion Prompt)', ''))
+            if not motion_prompt or motion_prompt.lower() == 'nan':
+                motion_prompt = "Smooth camera motion, cinematic movement"
+            
+            self.log(f"🎬 Processing Video Block {block_id}...")
+            self.log(f"   📝 Prompt: {motion_prompt[:60]}...")
+            
+            try:
+                # Clone workflow
+                workflow = clone_workflow(workflow_template)
+                
+                # Set positive prompt
+                if node_map.get("positive_prompt_node_id"):
+                    set_text_prompt(workflow, node_map["positive_prompt_node_id"], motion_prompt)
+                
+                # Set negative prompt (empty for CFG=1)
+                if node_map.get("negative_prompt_node_id"):
+                    set_text_prompt(workflow, node_map["negative_prompt_node_id"], "")
+                
+                # Upload and set start frame
+                if node_map.get("start_frame_node_id"):
+                    try:
+                        start_name = self._client.upload_image(start_image_path)
+                        set_image_input(workflow, node_map["start_frame_node_id"], start_name)
+                        self.log(f"   📎 Start Frame uploaded")
+                    except Exception as e:
+                        self.log(f"   ⚠️ Start frame upload failed: {e}")
+                
+                # Upload and set end frame (if exists)
+                if node_map.get("end_frame_node_id") and os.path.exists(end_image_path):
+                    try:
+                        end_name = self._client.upload_image(end_image_path)
+                        set_image_input(workflow, node_map["end_frame_node_id"], end_name)
+                        self.log(f"   📎 End Frame uploaded")
+                    except Exception as e:
+                        self.log(f"   ⚠️ End frame upload failed: {e}")
+                
+                # Randomize seed
+                if node_map.get("sampler_node_id"):
+                    randomize_seed(workflow, node_map["sampler_node_id"], node_map.get("seed_input_name", "seed"))
+                
+                # Queue the prompt
+                self.log("   👉 Generating video...")
+                prompt_id = self._client.queue_prompt(workflow)
+                
+                # Wait for completion (video takes longer)
+                result = self._client.wait_for_completion(
+                    prompt_id,
+                    timeout=GENERATION_TIMEOUT * 3,  # 3x timeout for video
+                    log_callback=self.log,
+                    reconnect_attempts=WS_RECONNECT_ATTEMPTS,
+                    reconnect_delay=WS_RECONNECT_DELAY
+                )
+                
+                if result:
+                    # Download video result
+                    output_filename = f"block_{block_id}_video.mp4"
+                    output_path = os.path.join(DOWNLOAD_DIR, output_filename)
+                    
+                    try:
+                        self._client.download_image(
+                            filename=result['filename'],
+                            output_path=output_path,
+                            subfolder=result.get('subfolder', ''),
+                            image_type=result.get('type', 'output')
+                        )
+                        self.log(f"   ✅ Saved: {output_filename}")
+                        video_count += 1
+                        generated_videos.append(output_path)
+                    except Exception as e:
+                        self.log(f"   ⚠️ Video download failed: {e}")
+                else:
+                    self.log(f"   ❌ Video generation failed for Block {block_id}")
+                
+                # Delay between videos
+                time.sleep(random.uniform(2.0, 4.0))
+                
+            except Exception as e:
+                self.log(f"   ❌ Error generating video for Block {block_id}: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
         
-        self.log(f"   ℹ️ {video_count} video blocks ready for generation")
-        self.log("   💡 Configure workflows/video_gen.json and workflows/config.py for video support")
+        self.log(f"🎉 Video Production Complete: {video_count} videos generated")
+        
+        # Offer to concatenate all videos
+        if len(generated_videos) > 1:
+            self.log(f"💡 To concatenate all videos, use:")
+            self.log(f"   from upscale import concat_directory")
+            self.log(f"   concat_directory('{DOWNLOAD_DIR}', 'block_*_video.mp4', 'final_video.mp4')")
 
 
 # ==========================================

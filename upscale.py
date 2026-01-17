@@ -391,32 +391,65 @@ class VideoConcatenator:
     
     def _concat_with_reencode(self, video_paths: list, output_path: Path) -> None:
         """재인코딩하면서 연결 (다른 코덱/해상도 지원)."""
-        # Build filter complex for concat
-        filter_inputs = ""
-        filter_complex = ""
-        for i, vp in enumerate(video_paths):
-            filter_inputs += f'-i "{vp}" '
-            filter_complex += f"[{i}:v][{i}:a]"
+        # Check if videos have audio
+        has_audio = self._check_video_has_audio(video_paths[0])
         
-        filter_complex += f"concat=n={len(video_paths)}:v=1:a=1[outv][outa]"
+        # Build filter complex for concat
+        filter_complex = ""
+        for i in range(len(video_paths)):
+            if has_audio:
+                filter_complex += f"[{i}:v][{i}:a]"
+            else:
+                filter_complex += f"[{i}:v]"
+        
+        if has_audio:
+            filter_complex += f"concat=n={len(video_paths)}:v=1:a=1[outv][outa]"
+        else:
+            filter_complex += f"concat=n={len(video_paths)}:v=1:a=0[outv]"
         
         cmd = [
             "ffmpeg", "-y",
         ]
         for vp in video_paths:
             cmd.extend(["-i", str(vp)])
-        cmd.extend([
-            "-filter_complex", filter_complex,
-            "-map", "[outv]",
-            "-map", "[outa]",
-            "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", "18",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            str(output_path)
-        ])
+        
+        if has_audio:
+            cmd.extend([
+                "-filter_complex", filter_complex,
+                "-map", "[outv]",
+                "-map", "[outa]",
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-crf", "18",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                str(output_path)
+            ])
+        else:
+            cmd.extend([
+                "-filter_complex", filter_complex,
+                "-map", "[outv]",
+                "-c:v", "libx264",
+                "-preset", "medium",
+                "-crf", "18",
+                str(output_path)
+            ])
         subprocess.run(cmd, capture_output=True, check=True)
+    
+    def _check_video_has_audio(self, video_path: Path) -> bool:
+        """비디오에 오디오 스트림이 있는지 확인."""
+        try:
+            probe_cmd = [
+                "ffprobe", "-v", "error",
+                "-select_streams", "a:0",
+                "-show_entries", "stream=codec_type",
+                "-of", "csv=p=0",
+                str(video_path)
+            ]
+            result = subprocess.run(probe_cmd, capture_output=True, text=True)
+            return "audio" in result.stdout
+        except Exception:
+            return False
     
     def concatenate_directory(
         self,
