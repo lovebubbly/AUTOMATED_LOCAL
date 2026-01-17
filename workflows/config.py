@@ -16,23 +16,30 @@ Node ID 확인 방법:
 
 NODE_MAP = {
     # -----------------------------------------------------------
-    # Image Generation Workflow (image_gen.json)
+    # Image Generation Workflow (image_gen.json) - Qwen Image Edit
     # -----------------------------------------------------------
     "image_gen": {
+        # Qwen Image Edit 2511 Workflow (API Format)
         # Text Encoding Nodes
-        "positive_prompt_node_id": "6",      # CLIP Text Encode (Positive Prompt)
-        "negative_prompt_node_id": "7",      # CLIP Text Encode (Negative Prompt)
+        "positive_prompt_node_id": "91:68",   # TextEncodeQwenImageEditPlus (Positive)
+        "negative_prompt_node_id": "91:69",   # TextEncodeQwenImageEditPlus (Negative)
         
         # Sampler / Generator Node
-        "sampler_node_id": "3",              # KSampler, SamplerCustom, etc.
-        "seed_input_name": "seed",           # Input name for seed (usually "seed")
+        "sampler_node_id": "91:65",           # KSampler
+        "seed_input_name": "seed",
         
         # Image Input Nodes
-        "reference_image_node_id": "10",     # LoadImage - Rolling Reference
-        "char_sheet_node_id": "12",          # LoadImage - Character Sheet (Optional)
+        "source_image_node_id": "41",         # LoadImage - Source Image (image1)
+        "reference_image_node_id": "83",      # LoadImage - Reference/Material Image (image2)
         
         # Output Node
-        "save_image_node_id": "9",           # SaveImage or PreviewImage
+        "save_image_node_id": "92",           # SaveImage
+        
+        # Model Nodes (for reference)
+        "clip_node_id": "91:61",              # CLIPLoader (qwen_2.5_vl_7b)
+        "vae_node_id": "91:10",               # VAELoader
+        "unet_node_id": "91:89",              # UnetLoaderGGUF
+        "lora_node_id": "91:74",              # LoraLoaderModelOnly
     },
     
     # -----------------------------------------------------------

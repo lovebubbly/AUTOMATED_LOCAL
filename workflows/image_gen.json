@@ -1,83 +1,252 @@
 {
-  "_comment": "이 파일을 ComfyUI에서 Export한 실제 워크플로우로 교체하세요. 아래는 플레이스홀더 구조입니다.",
-  "_instructions": [
-    "1. ComfyUI에서 워크플로우를 엽니다",
-    "2. Menu → Save (API Format) 또는 Export Workflow",
-    "3. 이 파일을 Export된 JSON으로 교체합니다",
-    "4. workflows/config.py의 NODE_MAP을 실제 Node ID에 맞게 업데이트합니다",
-    "5. python workflows/workflow_utils.py workflows/image_gen.json 으로 노드 분석 가능"
-  ],
-  "3": {
-    "class_type": "KSampler",
+  "41": {
     "inputs": {
-      "cfg": 7,
-      "denoise": 1,
-      "latent_image": ["5", 0],
-      "model": ["4", 0],
-      "negative": ["7", 0],
-      "positive": ["6", 0],
-      "sampler_name": "euler",
-      "scheduler": "normal",
-      "seed": 0,
-      "steps": 20
+      "image": "leather_sofa.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "이미지 로드"
     }
   },
-  "4": {
-    "class_type": "CheckpointLoaderSimple",
+  "83": {
     "inputs": {
-      "ckpt_name": "your_model.safetensors"
+      "image": "texture_fur.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "이미지 로드"
     }
   },
-  "5": {
-    "class_type": "EmptyLatentImage",
+  "92": {
     "inputs": {
-      "batch_size": 1,
-      "height": 576,
-      "width": 1024
-    }
-  },
-  "6": {
-    "class_type": "CLIPTextEncode",
-    "inputs": {
-      "clip": ["4", 1],
-      "text": "POSITIVE_PROMPT_PLACEHOLDER"
-    }
-  },
-  "7": {
-    "class_type": "CLIPTextEncode",
-    "inputs": {
-      "clip": ["4", 1],
-      "text": "NEGATIVE_PROMPT_PLACEHOLDER"
-    }
-  },
-  "8": {
-    "class_type": "VAEDecode",
-    "inputs": {
-      "samples": ["3", 0],
-      "vae": ["4", 2]
-    }
-  },
-  "9": {
+      "filename_prefix": "Qwen_Edit_2511",
+      "images": [
+        "91:8",
+        0
+      ]
+    },
     "class_type": "SaveImage",
-    "inputs": {
-      "filename_prefix": "ComfyUI_output",
-      "images": ["8", 0]
+    "_meta": {
+      "title": "이미지 저장"
     }
   },
-  "10": {
-    "class_type": "LoadImage",
-    "_comment": "Reference Image - Rolling Reference from previous blocks",
+  "91:61": {
     "inputs": {
-      "image": "reference_placeholder.png",
-      "upload": "image"
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "CLIP 로드"
     }
   },
-  "12": {
-    "class_type": "LoadImage",
-    "_comment": "Character Sheet - Fixed reference for consistency",
+  "91:67": {
     "inputs": {
-      "image": "char_sheet.png",
-      "upload": "image"
+      "shift": 3.1,
+      "model": [
+        "91:74",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "모델 샘플링 (AuraFlow)"
+    }
+  },
+  "91:10": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "VAE 로드"
+    }
+  },
+  "91:71": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "91:69",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "Flux Kontext 다중 참조 잠재 방법"
+    }
+  },
+  "91:70": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "91:68",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "Flux Kontext 다중 참조 잠재 방법"
+    }
+  },
+  "91:64": {
+    "inputs": {
+      "strength": 1,
+      "model": [
+        "91:67",
+        0
+      ]
+    },
+    "class_type": "CFGNorm",
+    "_meta": {
+      "title": "CFGNorm"
+    }
+  },
+  "91:8": {
+    "inputs": {
+      "samples": [
+        "91:65",
+        0
+      ],
+      "vae": [
+        "91:10",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE 디코드"
+    }
+  },
+  "91:68": {
+    "inputs": {
+      "prompt": "Change the furniture leather difference in image 1 to the fur material in image 2.",
+      "clip": [
+        "91:61",
+        0
+      ],
+      "vae": [
+        "91:10",
+        0
+      ],
+      "image1": [
+        "91:88",
+        0
+      ],
+      "image2": [
+        "83",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "TextEncodeQwenImageEditPlus (Positive)"
+    }
+  },
+  "91:75": {
+    "inputs": {
+      "pixels": [
+        "91:88",
+        0
+      ],
+      "vae": [
+        "91:10",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE 인코드"
+    }
+  },
+  "91:88": {
+    "inputs": {
+      "image": [
+        "41",
+        0
+      ]
+    },
+    "class_type": "FluxKontextImageScale",
+    "_meta": {
+      "title": "Flux Kontext 이미지 스케일"
+    }
+  },
+  "91:74": {
+    "inputs": {
+      "lora_name": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+      "strength_model": 1,
+      "model": [
+        "91:89",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA 로드 (모델 전용)"
+    }
+  },
+  "91:65": {
+    "inputs": {
+      "seed": 374470990866512,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "91:64",
+        0
+      ],
+      "positive": [
+        "91:70",
+        0
+      ],
+      "negative": [
+        "91:71",
+        0
+      ],
+      "latent_image": [
+        "91:75",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "91:69": {
+    "inputs": {
+      "prompt": "",
+      "clip": [
+        "91:61",
+        0
+      ],
+      "vae": [
+        "91:10",
+        0
+      ],
+      "image1": [
+        "91:88",
+        0
+      ],
+      "image2": [
+        "83",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "TextEncodeQwenImageEditPlus"
+    }
+  },
+  "91:89": {
+    "inputs": {
+      "unet_name": "qwen-image-edit-2511-Q4_K_M.gguf"
+    },
+    "class_type": "UnetLoaderGGUF",
+    "_meta": {
+      "title": "Unet Loader (GGUF)"
     }
   }
 }
