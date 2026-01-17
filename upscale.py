@@ -302,3 +302,203 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Error: {e}")
         sys.exit(1)
+
+
+# ============================================================
+# VIDEO CONCATENATION
+# ============================================================
+
+class VideoConcatenator:
+    """
+    여러 비디오 파일을 하나로 이어붙이는 클래스.
+    
+    FFmpeg의 concat demuxer를 사용하여 무손실 연결합니다.
+    """
+    
+    def __init__(self, output_dir: Optional[str] = None):
+        """
+        Args:
+            output_dir: 출력 디렉토리 (None이면 첫 번째 입력 파일의 디렉토리 사용)
+        """
+        self.output_dir = Path(output_dir) if output_dir else None
+    
+    def concatenate(
+        self,
+        video_paths: list,
+        output_filename: str = "final_output.mp4",
+        reencode: bool = False
+    ) -> str:
+        """
+        여러 비디오를 하나로 연결합니다.
+        
+        Args:
+            video_paths: 비디오 파일 경로 리스트 (순서대로 연결)
+            output_filename: 출력 파일명
+            reencode: True면 재인코딩 (다른 코덱/해상도 비디오 연결 시)
+            
+        Returns:
+            출력 파일 경로
+        """
+        if len(video_paths) < 2:
+            raise ValueError("At least 2 videos required for concatenation")
+        
+        # Validate all files exist
+        video_paths = [Path(p) for p in video_paths]
+        for vp in video_paths:
+            if not vp.exists():
+                raise FileNotFoundError(f"Video not found: {vp}")
+        
+        # Determine output directory
+        if self.output_dir:
+            output_dir = self.output_dir
+        else:
+            output_dir = video_paths[0].parent
+        
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / output_filename
+        
+        logger.info(f"🎬 Concatenating {len(video_paths)} videos...")
+        
+        if reencode:
+            self._concat_with_reencode(video_paths, output_path)
+        else:
+            self._concat_demuxer(video_paths, output_path)
+        
+        logger.info(f"✅ Concatenation complete: {output_path}")
+        return str(output_path)
+    
+    def _concat_demuxer(self, video_paths: list, output_path: Path) -> None:
+        """FFmpeg concat demuxer 사용 (무손실, 같은 코덱 필요)."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            for vp in video_paths:
+                # Escape single quotes in path
+                escaped_path = str(vp.absolute()).replace("'", "'\\''")
+                f.write(f"file '{escaped_path}'\n")
+            concat_list = f.name
+        
+        try:
+            cmd = [
+                "ffmpeg", "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", concat_list,
+                "-c", "copy",
+                str(output_path)
+            ]
+            subprocess.run(cmd, capture_output=True, check=True)
+        finally:
+            os.unlink(concat_list)
+    
+    def _concat_with_reencode(self, video_paths: list, output_path: Path) -> None:
+        """재인코딩하면서 연결 (다른 코덱/해상도 지원)."""
+        # Build filter complex for concat
+        filter_inputs = ""
+        filter_complex = ""
+        for i, vp in enumerate(video_paths):
+            filter_inputs += f'-i "{vp}" '
+            filter_complex += f"[{i}:v][{i}:a]"
+        
+        filter_complex += f"concat=n={len(video_paths)}:v=1:a=1[outv][outa]"
+        
+        cmd = [
+            "ffmpeg", "-y",
+        ]
+        for vp in video_paths:
+            cmd.extend(["-i", str(vp)])
+        cmd.extend([
+            "-filter_complex", filter_complex,
+            "-map", "[outv]",
+            "-map", "[outa]",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "18",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            str(output_path)
+        ])
+        subprocess.run(cmd, capture_output=True, check=True)
+    
+    def concatenate_directory(
+        self,
+        directory: str,
+        pattern: str = "*.mp4",
+        output_filename: str = "final_output.mp4",
+        sort_by: str = "name"
+    ) -> str:
+        """
+        디렉토리 내 모든 비디오를 연결합니다.
+        
+        Args:
+            directory: 비디오가 있는 디렉토리
+            pattern: 파일 패턴 (예: "*.mp4", "block_*.mp4")
+            output_filename: 출력 파일명
+            sort_by: 정렬 기준 ("name" 또는 "time")
+            
+        Returns:
+            출력 파일 경로
+        """
+        dir_path = Path(directory)
+        if not dir_path.exists():
+            raise FileNotFoundError(f"Directory not found: {directory}")
+        
+        videos = list(dir_path.glob(pattern))
+        if not videos:
+            raise ValueError(f"No videos matching '{pattern}' in {directory}")
+        
+        # Sort videos
+        if sort_by == "name":
+            videos.sort(key=lambda x: x.name)
+        elif sort_by == "time":
+            videos.sort(key=lambda x: x.stat().st_mtime)
+        else:
+            raise ValueError(f"Invalid sort_by: {sort_by}")
+        
+        logger.info(f"📂 Found {len(videos)} videos in {directory}")
+        for i, v in enumerate(videos):
+            logger.info(f"   {i+1}. {v.name}")
+        
+        return self.concatenate(videos, output_filename)
+
+
+def concat_videos(
+    video_paths: list,
+    output_path: Optional[str] = None,
+    reencode: bool = False
+) -> str:
+    """
+    비디오 연결 간편 함수.
+    
+    Args:
+        video_paths: 비디오 파일 경로 리스트
+        output_path: 출력 경로 (None이면 자동 생성)
+        reencode: 재인코딩 여부
+        
+    Returns:
+        출력 파일 경로
+    """
+    output_filename = Path(output_path).name if output_path else "final_output.mp4"
+    output_dir = Path(output_path).parent if output_path else None
+    
+    concat = VideoConcatenator(output_dir=str(output_dir) if output_dir else None)
+    return concat.concatenate(video_paths, output_filename, reencode)
+
+
+def concat_directory(
+    directory: str,
+    pattern: str = "*.mp4",
+    output_filename: str = "final_output.mp4"
+) -> str:
+    """
+    디렉토리 내 비디오 연결 간편 함수.
+    
+    Args:
+        directory: 비디오 디렉토리
+        pattern: 파일 패턴
+        output_filename: 출력 파일명
+        
+    Returns:
+        출력 파일 경로
+    """
+    concat = VideoConcatenator()
+    return concat.concatenate_directory(directory, pattern, output_filename)
+
