@@ -1,0 +1,83 @@
+{
+  "_comment": "이 파일을 ComfyUI에서 Export한 실제 워크플로우로 교체하세요. 아래는 플레이스홀더 구조입니다.",
+  "_instructions": [
+    "1. ComfyUI에서 워크플로우를 엽니다",
+    "2. Menu → Save (API Format) 또는 Export Workflow",
+    "3. 이 파일을 Export된 JSON으로 교체합니다",
+    "4. workflows/config.py의 NODE_MAP을 실제 Node ID에 맞게 업데이트합니다",
+    "5. python workflows/workflow_utils.py workflows/image_gen.json 으로 노드 분석 가능"
+  ],
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "cfg": 7,
+      "denoise": 1,
+      "latent_image": ["5", 0],
+      "model": ["4", 0],
+      "negative": ["7", 0],
+      "positive": ["6", 0],
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "seed": 0,
+      "steps": 20
+    }
+  },
+  "4": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "your_model.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "batch_size": 1,
+      "height": 576,
+      "width": 1024
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 1],
+      "text": "POSITIVE_PROMPT_PLACEHOLDER"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["4", 1],
+      "text": "NEGATIVE_PROMPT_PLACEHOLDER"
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["3", 0],
+      "vae": ["4", 2]
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "ComfyUI_output",
+      "images": ["8", 0]
+    }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "_comment": "Reference Image - Rolling Reference from previous blocks",
+    "inputs": {
+      "image": "reference_placeholder.png",
+      "upload": "image"
+    }
+  },
+  "12": {
+    "class_type": "LoadImage",
+    "_comment": "Character Sheet - Fixed reference for consistency",
+    "inputs": {
+      "image": "char_sheet.png",
+      "upload": "image"
+    }
+  }
+}

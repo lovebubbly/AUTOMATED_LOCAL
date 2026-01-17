@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+
+# Exclude system context files
+SYSTEM CONTEXT*.md
+SYSTEM CONTEXT*.pdf
+
+# Exclude generated assets
+assets/images/

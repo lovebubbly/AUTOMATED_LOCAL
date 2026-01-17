@@ -1,0 +1,16 @@
+# AI Director - Dependencies
+# ComfyUI Local Integration Version
+
+# Web Framework
+fastapi
+uvicorn
+
+# Data Processing
+pandas
+
+# HTTP Requests & WebSocket
+requests
+websocket-client
+
+# Environment Configuration
+python-dotenv
