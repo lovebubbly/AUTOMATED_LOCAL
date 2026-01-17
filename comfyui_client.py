@@ -209,7 +209,7 @@ class ComfyUIClient:
                     elif msg_type == 'executed':
                         exec_data = data.get('data', {})
                         if exec_data.get('prompt_id') == prompt_id:
-                            output = exec_data.get('output', {})
+                            output = exec_data.get('output') or {}
                             if 'images' in output:
                                 images = output['images']
                                 if images:
@@ -287,7 +287,7 @@ class ComfyUIClient:
             
             # Find first node with images
             for node_id, node_output in outputs.items():
-                if 'images' in node_output:
+                if node_output and 'images' in node_output:
                     images = node_output['images']
                     if images:
                         img_info = images[0]

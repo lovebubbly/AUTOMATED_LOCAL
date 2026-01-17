@@ -23,6 +23,7 @@ NODE_MAP = {
         # Text Encoding Nodes
         "positive_prompt_node_id": "91:68",   # TextEncodeQwenImageEditPlus (Positive)
         "negative_prompt_node_id": "91:69",   # TextEncodeQwenImageEditPlus (Negative)
+        "prompt_input_name": "prompt",        # Qwen uses "prompt" instead of "text"
         
         # Sampler / Generator Node
         "sampler_node_id": "91:65",           # KSampler

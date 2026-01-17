@@ -418,26 +418,40 @@ class Director:
             # Clone workflow for modification
             workflow = clone_workflow(workflow_template)
             
-            # Set prompts
-            set_text_prompt(workflow, node_map["positive_prompt_node_id"], prompt)
-            set_text_prompt(workflow, node_map["negative_prompt_node_id"], DEFAULT_NEGATIVE_PROMPT)
+            # Set prompts (Qwen uses "prompt" instead of "text")
+            prompt_input_name = node_map.get("prompt_input_name", "text")
+            from workflows import set_node_input
+            set_node_input(workflow, node_map["positive_prompt_node_id"], prompt_input_name, prompt)
+            set_node_input(workflow, node_map["negative_prompt_node_id"], prompt_input_name, "")
             
             # Randomize seed
             randomize_seed(workflow, node_map["sampler_node_id"], node_map.get("seed_input_name", "seed"))
             
-            # Upload and set reference image
+            # Upload and set source image (for Qwen Image Edit workflow)
+            # This is the main image to be edited (node 41)
             if reference_path and os.path.exists(reference_path):
                 try:
                     ref_name = self._client.upload_image(reference_path)
-                    set_image_input(workflow, node_map["reference_image_node_id"], ref_name)
-                    self.log(f"   📎 Ref: {os.path.basename(reference_path)}")
+                    
+                    # Set source_image_node (노드 41) - 편집할 원본 이미지
+                    if node_map.get("source_image_node_id"):
+                        set_image_input(workflow, node_map["source_image_node_id"], ref_name)
+                        self.log(f"   📎 Source: {os.path.basename(reference_path)}")
+                    
+                    # Set reference_image_node (노드 83) - 재질/스타일 참조 이미지
+                    # For Qwen Image Edit, we use the same image for both (style transfer from prompt)
+                    if node_map.get("reference_image_node_id"):
+                        set_image_input(workflow, node_map["reference_image_node_id"], ref_name)
+                        
                 except Exception as e:
                     self.log(f"   ⚠️ Reference upload failed: {e}")
             
             # Set character sheet if available and node exists
-            if char_sheet_name and node_map.get("char_sheet_node_id"):
+            # For Qwen workflow, we could use char_sheet as the reference material
+            if char_sheet_name and node_map.get("reference_image_node_id"):
                 try:
-                    set_image_input(workflow, node_map["char_sheet_node_id"], char_sheet_name)
+                    set_image_input(workflow, node_map["reference_image_node_id"], char_sheet_name)
+                    self.log(f"   📎 Material: char_sheet")
                 except KeyError:
                     pass  # Node doesn't exist in workflow, skip
             
