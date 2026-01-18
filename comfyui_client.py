@@ -210,16 +210,16 @@ class ComfyUIClient:
                         exec_data = data.get('data', {})
                         if exec_data.get('prompt_id') == prompt_id:
                             output = exec_data.get('output') or {}
-                            if 'images' in output:
-                                images = output['images']
-                                if images:
-                                    img_info = images[0]  # Take first image
-                                    output_images = {
-                                        'node_id': exec_data.get('node'),
-                                        'filename': img_info.get('filename'),
-                                        'subfolder': img_info.get('subfolder', ''),
-                                        'type': img_info.get('type', 'output')
-                                    }
+                            # Check for images (SaveImage) or gifs/videos (VHS_VideoCombine)
+                            media_list = output.get('images') or output.get('gifs') or output.get('videos') or []
+                            if media_list:
+                                media_info = media_list[0]  # Take first item
+                                output_images = {
+                                    'node_id': exec_data.get('node'),
+                                    'filename': media_info.get('filename'),
+                                    'subfolder': media_info.get('subfolder', ''),
+                                    'type': media_info.get('type', 'output')
+                                }
                     
                     # Execution complete
                     elif msg_type == 'execution_success' or msg_type == 'executing':
@@ -285,18 +285,20 @@ class ComfyUIClient:
             prompt_history = history.get(prompt_id, {})
             outputs = prompt_history.get('outputs', {})
             
-            # Find first node with images
+            # Find first node with images or gifs/videos
             for node_id, node_output in outputs.items():
-                if node_output and 'images' in node_output:
-                    images = node_output['images']
-                    if images:
-                        img_info = images[0]
-                        return {
-                            'node_id': node_id,
-                            'filename': img_info.get('filename'),
-                            'subfolder': img_info.get('subfolder', ''),
-                            'type': img_info.get('type', 'output')
-                        }
+                if not node_output:
+                    continue
+                # Check for images (SaveImage) or gifs/videos (VHS_VideoCombine)
+                media_list = node_output.get('images') or node_output.get('gifs') or node_output.get('videos') or []
+                if media_list:
+                    media_info = media_list[0]
+                    return {
+                        'node_id': node_id,
+                        'filename': media_info.get('filename'),
+                        'subfolder': media_info.get('subfolder', ''),
+                        'type': media_info.get('type', 'output')
+                    }
             
             return None
             
