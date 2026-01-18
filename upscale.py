@@ -668,43 +668,70 @@ class SmartConcatenator:
         return str(output_path)
     
     def _concatenate_with_transitions(self, segments: list, output_path: Path) -> None:
-        """FFmpeg로 트랜지션 포함 연결."""
+        """FFmpeg로 트랜지션 포함 연결 (timebase 정규화)."""
         if len(segments) == 1:
             # 단일 비디오면 그냥 복사
             shutil.copy(segments[0]['path'], output_path)
             return
         
-        # 복잡한 filter_complex 생성
-        # 트랜지션이 필요한 세그먼트만 xfade 적용
+        # 비디오 길이 가져오기 (offset 계산용)
+        def get_video_duration(path):
+            try:
+                probe_cmd = [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "csv=p=0",
+                    str(path)
+                ]
+                result = subprocess.run(probe_cmd, capture_output=True, text=True)
+                return float(result.stdout.strip())
+            except:
+                return 5.0  # 기본 5초
+        
+        # 입력 및 필터 준비
         inputs = []
         filter_parts = []
         
         for i, seg in enumerate(segments):
             inputs.extend(["-i", str(seg['path'])])
         
-        # 현재 출력 레이블 추적
-        current_label = "[0:v]"
+        # 모든 입력을 동일한 timebase로 정규화 (1/25 fps 기준)
+        normalized = []
+        for i in range(len(segments)):
+            filter_parts.append(f"[{i}:v]settb=AVTB,fps=16[n{i}]")
+            normalized.append(f"[n{i}]")
+        
+        # 순차적으로 xfade 또는 concat 적용
+        current_label = normalized[0]
+        accumulated_duration = get_video_duration(segments[0]['path'])
         
         for i in range(1, len(segments)):
             seg = segments[i]
-            next_input = f"[{i}:v]"
+            next_input = normalized[i]
             out_label = f"[v{i}]"
+            video_duration = get_video_duration(seg['path'])
             
             if seg['needs_transition']:
-                # 크로스페이드 적용
+                # xfade: offset = 현재까지 누적 길이 - 트랜지션 길이
+                offset = max(0, accumulated_duration - self.transition_duration)
+                
                 if self.transition_type == "crossfade":
                     filter_parts.append(
-                        f"{current_label}{next_input}xfade=transition=fade:duration={self.transition_duration}:offset=4.7{out_label}"
+                        f"{current_label}{next_input}xfade=transition=fade:duration={self.transition_duration}:offset={offset:.2f}{out_label}"
                     )
                 elif self.transition_type == "fade_black":
                     filter_parts.append(
-                        f"{current_label}{next_input}xfade=transition=fadeblack:duration={self.transition_duration}:offset=4.7{out_label}"
+                        f"{current_label}{next_input}xfade=transition=fadeblack:duration={self.transition_duration}:offset={offset:.2f}{out_label}"
                     )
+                
+                # 누적 시간 업데이트 (xfade는 겹치므로 트랜지션 길이만큼 빼기)
+                accumulated_duration = offset + video_duration
             else:
                 # 트랜지션 없이 concat
                 filter_parts.append(
                     f"{current_label}{next_input}concat=n=2:v=1:a=0{out_label}"
                 )
+                accumulated_duration += video_duration
             
             current_label = out_label
         
