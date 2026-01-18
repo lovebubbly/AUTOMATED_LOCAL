@@ -714,10 +714,14 @@ class SmartConcatenator:
                     group_videos.append(group_output)
                     logger.debug(f"   Group {idx+1}: {len(group)} videos -> {group_output.name}")
             
-            # 2단계: 그룹 간 xfade 적용
+            # 2단계: 그룹 간 트랜지션 적용
             if len(group_videos) == 1:
                 shutil.copy(group_videos[0], output_path)
+            elif self.transition_type == "fade_to_black":
+                # Fade to Black: 길이가 줄지 않음
+                self._fade_to_black_groups(group_videos, output_path)
             else:
+                # xfade: 중첩되어 길이가 줄어듦
                 self._xfade_groups(group_videos, output_path)
         
         finally:
@@ -771,6 +775,106 @@ class SmartConcatenator:
             str(output_path)
         ])
         subprocess.run(cmd, capture_output=True, check=True)
+    
+    def _fade_to_black_groups(self, group_videos: list, output_path: Path) -> None:
+        """
+        Fade to Black 방식 트랜지션.
+        
+        각 그룹의 끝에 fadeout, 시작에 fadein 적용.
+        중첩 없이 concat하므로 길이가 줄지 않음.
+        """
+        import tempfile
+        temp_dir = Path(tempfile.mkdtemp())
+        
+        try:
+            processed_videos = []
+            fade_duration = self.transition_duration
+            
+            for i, video in enumerate(group_videos):
+                # 비디오 길이 측정
+                probe_cmd = [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "csv=p=0",
+                    str(video)
+                ]
+                result = subprocess.run(probe_cmd, capture_output=True, text=True)
+                try:
+                    duration = float(result.stdout.strip())
+                except:
+                    duration = 5.0
+                
+                output_temp = temp_dir / f"faded_{i}.mp4"
+                
+                # 첫 번째가 아니면 fadein, 마지막이 아니면 fadeout
+                filters = []
+                
+                if i > 0:
+                    # Fade in from black
+                    filters.append(f"fade=t=in:st=0:d={fade_duration}")
+                
+                if i < len(group_videos) - 1:
+                    # Fade out to black
+                    fadeout_start = max(0, duration - fade_duration)
+                    filters.append(f"fade=t=out:st={fadeout_start:.2f}:d={fade_duration}")
+                
+                if filters:
+                    filter_str = ",".join(filters)
+                    cmd = [
+                        "ffmpeg", "-y",
+                        "-i", str(video),
+                        "-vf", filter_str,
+                        "-c:v", "libx264",
+                        "-preset", "fast",
+                        "-crf", "18",
+                        str(output_temp)
+                    ]
+                    subprocess.run(cmd, capture_output=True, check=True)
+                    processed_videos.append(output_temp)
+                else:
+                    # 필터 없으면 그대로 사용
+                    processed_videos.append(video)
+            
+            # Concat demuxer로 연결
+            list_file = temp_dir / "fade_list.txt"
+            with open(list_file, 'w', encoding='utf-8') as f:
+                for v in processed_videos:
+                    path_str = str(Path(v).resolve()).replace('\\', '/')
+                    f.write(f"file '{path_str}'\n")
+            
+            cmd = [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                "-i", str(list_file),
+                "-c", "copy",
+                str(output_path)
+            ]
+            result = subprocess.run(cmd, capture_output=True)
+            
+            if result.returncode != 0:
+                logger.error(f"Fade concat error: {result.stderr.decode()}")
+                # 폴백: 재인코딩 방식
+                inputs = []
+                for v in processed_videos:
+                    inputs.extend(["-i", str(v)])
+                
+                filter_str = "".join([f"[{i}:v]" for i in range(len(processed_videos))]) + f"concat=n={len(processed_videos)}:v=1:a=0[outv]"
+                
+                cmd2 = ["ffmpeg", "-y"]
+                cmd2.extend(inputs)
+                cmd2.extend([
+                    "-filter_complex", filter_str,
+                    "-map", "[outv]",
+                    "-c:v", "libx264",
+                    "-preset", "fast",
+                    "-crf", "18",
+                    str(output_path)
+                ])
+                subprocess.run(cmd2, capture_output=True, check=True)
+            
+            logger.info(f"✅ Fade to Black transition applied ({len(group_videos)} groups)")
+        
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
     
     def _xfade_groups(self, group_videos: list, output_path: Path) -> None:
         """그룹 간 xfade 적용."""
