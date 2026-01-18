@@ -668,13 +668,88 @@ class SmartConcatenator:
         return str(output_path)
     
     def _concatenate_with_transitions(self, segments: list, output_path: Path) -> None:
-        """FFmpeg로 트랜지션 포함 연결 (timebase 정규화)."""
+        """
+        FFmpeg로 트랜지션 포함 연결 (2단계 방식).
+        
+        1단계: 연속 씬(needs_transition=False)끼리 그룹으로 concat
+        2단계: 그룹 사이에 xfade 트랜지션 적용
+        """
         if len(segments) == 1:
-            # 단일 비디오면 그냥 복사
             shutil.copy(segments[0]['path'], output_path)
             return
         
-        # 비디오 길이 가져오기 (offset 계산용)
+        import tempfile
+        
+        # 그룹 분할: 트랜지션이 필요한 지점에서 분할
+        groups = []
+        current_group = [segments[0]]
+        
+        for i in range(1, len(segments)):
+            if segments[i]['needs_transition']:
+                # 트랜지션 필요 = 새 그룹 시작
+                groups.append(current_group)
+                current_group = [segments[i]]
+            else:
+                # 연속 씬 = 현재 그룹에 추가
+                current_group.append(segments[i])
+        
+        groups.append(current_group)  # 마지막 그룹 추가
+        
+        logger.info(f"📦 Split into {len(groups)} groups for processing")
+        
+        # 1단계: 각 그룹을 하나의 비디오로 concat
+        temp_dir = Path(tempfile.mkdtemp())
+        group_videos = []
+        
+        try:
+            for idx, group in enumerate(groups):
+                if len(group) == 1:
+                    # 단일 비디오면 그대로 사용
+                    group_videos.append(group[0]['path'])
+                    logger.debug(f"   Group {idx+1}: 1 video (pass-through)")
+                else:
+                    # 여러 비디오면 concat
+                    group_output = temp_dir / f"group_{idx}.mp4"
+                    self._simple_concat(group, group_output)
+                    group_videos.append(group_output)
+                    logger.debug(f"   Group {idx+1}: {len(group)} videos -> {group_output.name}")
+            
+            # 2단계: 그룹 간 xfade 적용
+            if len(group_videos) == 1:
+                shutil.copy(group_videos[0], output_path)
+            else:
+                self._xfade_groups(group_videos, output_path)
+        
+        finally:
+            # 임시 파일 정리
+            shutil.rmtree(temp_dir, ignore_errors=True)
+    
+    def _simple_concat(self, segments: list, output_path: Path) -> None:
+        """단순 concat (연속 씬용)."""
+        # concat demuxer 방식 사용
+        list_file = output_path.parent / f"{output_path.stem}_list.txt"
+        
+        try:
+            with open(list_file, 'w', encoding='utf-8') as f:
+                for seg in segments:
+                    # 경로의 백슬래시를 슬래시로 변경
+                    path_str = str(seg['path']).replace('\\', '/')
+                    f.write(f"file '{path_str}'\n")
+            
+            cmd = [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                "-i", str(list_file),
+                "-c", "copy",
+                str(output_path)
+            ]
+            subprocess.run(cmd, capture_output=True, check=True)
+        finally:
+            if list_file.exists():
+                list_file.unlink()
+    
+    def _xfade_groups(self, group_videos: list, output_path: Path) -> None:
+        """그룹 간 xfade 적용."""
+        
         def get_video_duration(path):
             try:
                 probe_cmd = [
@@ -686,59 +761,38 @@ class SmartConcatenator:
                 result = subprocess.run(probe_cmd, capture_output=True, text=True)
                 return float(result.stdout.strip())
             except:
-                return 5.0  # 기본 5초
+                return 5.0
         
-        # 입력 및 필터 준비
         inputs = []
         filter_parts = []
         
-        for i, seg in enumerate(segments):
-            inputs.extend(["-i", str(seg['path'])])
+        for i, video in enumerate(group_videos):
+            inputs.extend(["-i", str(video)])
         
-        # 모든 입력을 동일한 timebase로 정규화 (1/25 fps 기준)
+        # 모든 입력 정규화
         normalized = []
-        for i in range(len(segments)):
-            filter_parts.append(f"[{i}:v]settb=AVTB,fps=16[n{i}]")
+        for i in range(len(group_videos)):
+            filter_parts.append(f"[{i}:v]fps=16,settb=AVTB[n{i}]")
             normalized.append(f"[n{i}]")
         
-        # 순차적으로 xfade 또는 concat 적용
+        # 순차적 xfade
         current_label = normalized[0]
-        accumulated_duration = get_video_duration(segments[0]['path'])
+        accumulated_duration = get_video_duration(group_videos[0])
         
-        for i in range(1, len(segments)):
-            seg = segments[i]
+        for i in range(1, len(group_videos)):
             next_input = normalized[i]
             out_label = f"[v{i}]"
-            video_duration = get_video_duration(seg['path'])
+            video_duration = get_video_duration(group_videos[i])
             
-            if seg['needs_transition']:
-                # xfade: offset = 현재까지 누적 길이 - 트랜지션 길이
-                offset = max(0, accumulated_duration - self.transition_duration)
-                trans_duration = self.transition_duration
-                
-                if self.transition_type == "crossfade":
-                    filter_parts.append(
-                        f"{current_label}{next_input}xfade=transition=fade:duration={trans_duration}:offset={offset:.2f}{out_label}"
-                    )
-                elif self.transition_type == "fade_black":
-                    filter_parts.append(
-                        f"{current_label}{next_input}xfade=transition=fadeblack:duration={trans_duration}:offset={offset:.2f}{out_label}"
-                    )
-                
-                # 누적 시간 업데이트 (xfade는 겹치므로 트랜지션 길이만큼 빼기)
-                accumulated_duration = offset + video_duration
-            else:
-                # 트랜지션 없이도 xfade 사용 (duration=0으로 즉시 전환)
-                # concat과 xfade 혼합 시 timebase 충돌 방지
-                offset = accumulated_duration
-                filter_parts.append(
-                    f"{current_label}{next_input}xfade=transition=fade:duration=0:offset={offset:.2f}{out_label}"
-                )
-                accumulated_duration += video_duration
+            offset = max(0, accumulated_duration - self.transition_duration)
             
+            filter_parts.append(
+                f"{current_label}{next_input}xfade=transition=fade:duration={self.transition_duration}:offset={offset:.2f}{out_label}"
+            )
+            
+            accumulated_duration = offset + video_duration
             current_label = out_label
         
-        # FFmpeg 명령 실행
         filter_complex = ";".join(filter_parts)
         
         cmd = ["ffmpeg", "-y"]
@@ -752,14 +806,13 @@ class SmartConcatenator:
             str(output_path)
         ])
         
-        try:
-            subprocess.run(cmd, capture_output=True, check=True)
-        except subprocess.CalledProcessError as e:
-            logger.error(f"FFmpeg error: {e.stderr.decode() if e.stderr else str(e)}")
+        result = subprocess.run(cmd, capture_output=True)
+        if result.returncode != 0:
+            logger.error(f"FFmpeg xfade error: {result.stderr.decode()}")
             # 폴백: 단순 concat
             logger.info("Falling back to simple concatenation...")
             concat = VideoConcatenator(output_dir=str(output_path.parent))
-            concat.concatenate([seg['path'] for seg in segments], output_path.name, reencode=True)
+            concat.concatenate([Path(v) for v in group_videos], output_path.name, reencode=True)
 
 
 def smart_concat(
