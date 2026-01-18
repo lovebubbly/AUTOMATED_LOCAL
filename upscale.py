@@ -535,3 +535,233 @@ def concat_directory(
     concat = VideoConcatenator()
     return concat.concatenate_directory(directory, pattern, output_filename)
 
+
+# ============================================================
+# SMART CONCATENATOR - Scene-aware transitions
+# ============================================================
+
+class SmartConcatenator:
+    """
+    스마트 비디오 연결기 - CSV 분석하여 새 씬에만 트랜지션 적용.
+    
+    Production Table CSV를 분석하여:
+    - [Input: Last Frame]로 시작하는 블록: 트랜지션 없이 연결 (연속 씬)
+    - 새 프롬프트로 시작하는 블록: 크로스페이드 트랜지션 적용 (새 씬)
+    """
+    
+    def __init__(
+        self,
+        csv_path: str,
+        video_dir: str,
+        transition_duration: float = 0.3,
+        transition_type: str = "crossfade"
+    ):
+        """
+        Args:
+            csv_path: Production Table CSV 경로
+            video_dir: 비디오 파일 디렉토리
+            transition_duration: 트랜지션 길이 (초)
+            transition_type: 트랜지션 타입 ("crossfade", "fade_black")
+        """
+        self.csv_path = Path(csv_path)
+        self.video_dir = Path(video_dir)
+        self.transition_duration = transition_duration
+        self.transition_type = transition_type
+        
+        if not self.csv_path.exists():
+            raise FileNotFoundError(f"CSV not found: {csv_path}")
+        if not self.video_dir.exists():
+            raise FileNotFoundError(f"Video directory not found: {video_dir}")
+    
+    def analyze_transitions(self) -> list:
+        """
+        CSV를 분석하여 트랜지션이 필요한 블록을 찾습니다.
+        
+        Returns:
+            list of tuples: [(block_id, needs_transition), ...]
+        """
+        import pandas as pd
+        
+        df = pd.read_csv(self.csv_path)
+        transitions = []
+        
+        for index, row in df.iterrows():
+            block_id = str(row['Block']).zfill(2)
+            start_frame_prompt = str(row.get('Nano Banana (Start Frame)', ''))
+            section = str(row.get('Section', ''))
+            
+            # 이전 블록의 섹션 (있다면)
+            prev_section = df.iloc[index - 1]['Section'] if index > 0 else None
+            
+            # 트랜지션이 필요한 조건:
+            # 1. [Input: Last Frame]로 시작하지 않음 (새 씬)
+            # 2. 섹션이 변경됨 (Intro → Verse 등)
+            # 3. 첫 블록이 아님
+            is_continuation = "[Input: Last Frame" in start_frame_prompt or "[Loop Bank" in start_frame_prompt
+            section_changed = prev_section is not None and section != prev_section
+            
+            needs_transition = False
+            if index > 0:  # 첫 블록은 트랜지션 불필요
+                if not is_continuation or section_changed:
+                    needs_transition = True
+            
+            transitions.append({
+                'block_id': block_id,
+                'needs_transition': needs_transition,
+                'section': section,
+                'reason': 'new_scene' if not is_continuation else ('section_change' if section_changed else 'continuation')
+            })
+            
+            logger.debug(f"Block {block_id}: transition={needs_transition}, reason={transitions[-1]['reason']}")
+        
+        return transitions
+    
+    def concatenate_smart(
+        self,
+        output_filename: str = "final_smart.mp4",
+        video_pattern: str = "block_{block_id}_video.mp4"
+    ) -> str:
+        """
+        스마트 트랜지션으로 비디오를 연결합니다.
+        
+        Args:
+            output_filename: 출력 파일명
+            video_pattern: 비디오 파일 패턴 ({block_id}는 자동 치환)
+            
+        Returns:
+            출력 파일 경로
+        """
+        transitions = self.analyze_transitions()
+        
+        # 존재하는 비디오 파일 찾기
+        video_segments = []
+        for t in transitions:
+            video_name = video_pattern.format(block_id=t['block_id'])
+            video_path = self.video_dir / video_name
+            if video_path.exists():
+                video_segments.append({
+                    'path': video_path,
+                    'block_id': t['block_id'],
+                    'needs_transition': t['needs_transition'],
+                    'reason': t['reason']
+                })
+            else:
+                logger.warning(f"Video not found: {video_path}")
+        
+        if not video_segments:
+            raise ValueError("No video files found")
+        
+        logger.info(f"🎬 Smart concatenation: {len(video_segments)} videos")
+        for seg in video_segments:
+            trans_mark = "🔀" if seg['needs_transition'] else "➡️"
+            logger.info(f"   {trans_mark} Block {seg['block_id']} ({seg['reason']})")
+        
+        # 트랜지션 필요한 부분 카운트
+        trans_count = sum(1 for seg in video_segments if seg['needs_transition'])
+        logger.info(f"📊 {trans_count} transitions will be applied")
+        
+        # FFmpeg로 스마트 연결
+        output_path = self.video_dir / output_filename
+        self._concatenate_with_transitions(video_segments, output_path)
+        
+        logger.info(f"✅ Smart output saved: {output_path}")
+        return str(output_path)
+    
+    def _concatenate_with_transitions(self, segments: list, output_path: Path) -> None:
+        """FFmpeg로 트랜지션 포함 연결."""
+        if len(segments) == 1:
+            # 단일 비디오면 그냥 복사
+            shutil.copy(segments[0]['path'], output_path)
+            return
+        
+        # 복잡한 filter_complex 생성
+        # 트랜지션이 필요한 세그먼트만 xfade 적용
+        inputs = []
+        filter_parts = []
+        
+        for i, seg in enumerate(segments):
+            inputs.extend(["-i", str(seg['path'])])
+        
+        # 현재 출력 레이블 추적
+        current_label = "[0:v]"
+        
+        for i in range(1, len(segments)):
+            seg = segments[i]
+            next_input = f"[{i}:v]"
+            out_label = f"[v{i}]"
+            
+            if seg['needs_transition']:
+                # 크로스페이드 적용
+                if self.transition_type == "crossfade":
+                    filter_parts.append(
+                        f"{current_label}{next_input}xfade=transition=fade:duration={self.transition_duration}:offset=4.7{out_label}"
+                    )
+                elif self.transition_type == "fade_black":
+                    filter_parts.append(
+                        f"{current_label}{next_input}xfade=transition=fadeblack:duration={self.transition_duration}:offset=4.7{out_label}"
+                    )
+            else:
+                # 트랜지션 없이 concat
+                filter_parts.append(
+                    f"{current_label}{next_input}concat=n=2:v=1:a=0{out_label}"
+                )
+            
+            current_label = out_label
+        
+        # FFmpeg 명령 실행
+        filter_complex = ";".join(filter_parts)
+        
+        cmd = ["ffmpeg", "-y"]
+        cmd.extend(inputs)
+        cmd.extend([
+            "-filter_complex", filter_complex,
+            "-map", current_label,
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "18",
+            str(output_path)
+        ])
+        
+        try:
+            subprocess.run(cmd, capture_output=True, check=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"FFmpeg error: {e.stderr.decode() if e.stderr else str(e)}")
+            # 폴백: 단순 concat
+            logger.info("Falling back to simple concatenation...")
+            concat = VideoConcatenator(output_dir=str(output_path.parent))
+            concat.concatenate([seg['path'] for seg in segments], output_path.name, reencode=True)
+
+
+def smart_concat(
+    csv_path: str,
+    video_dir: str,
+    output_filename: str = "final_smart.mp4",
+    transition_duration: float = 0.3
+) -> str:
+    """
+    스마트 트랜지션 연결 간편 함수.
+    
+    CSV를 분석하여 새 씬에만 크로스페이드를 적용합니다.
+    
+    Args:
+        csv_path: Production Table CSV 경로
+        video_dir: 비디오 파일 디렉토리
+        output_filename: 출력 파일명
+        transition_duration: 트랜지션 길이 (초)
+        
+    Returns:
+        출력 파일 경로
+        
+    Example:
+        >>> smart_concat(
+        ...     csv_path="assets/production_table.csv",
+        ...     video_dir="assets/images",
+        ...     output_filename="final_music_video.mp4"
+        ... )
+    """
+    smart = SmartConcatenator(
+        csv_path=csv_path,
+        video_dir=video_dir,
+        transition_duration=transition_duration
+    )
+    return smart.concatenate_smart(output_filename)
