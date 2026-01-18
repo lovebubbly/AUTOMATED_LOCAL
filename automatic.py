@@ -575,14 +575,23 @@ class Director:
                     except Exception as e:
                         self.log(f"   ⚠️ Start frame upload failed: {e}")
                 
-                # Upload and set end frame (if exists)
-                if node_map.get("end_frame_node_id") and os.path.exists(end_image_path):
-                    try:
-                        end_name = self._client.upload_image(end_image_path)
-                        set_image_input(workflow, node_map["end_frame_node_id"], end_name)
-                        self.log(f"   📎 End Frame uploaded")
-                    except Exception as e:
-                        self.log(f"   ⚠️ End frame upload failed: {e}")
+                # Upload and set end frame
+                # If end frame doesn't exist, use start frame as end frame (for loop videos)
+                if node_map.get("end_frame_node_id"):
+                    if os.path.exists(end_image_path):
+                        try:
+                            end_name = self._client.upload_image(end_image_path)
+                            set_image_input(workflow, node_map["end_frame_node_id"], end_name)
+                            self.log(f"   📎 End Frame uploaded")
+                        except Exception as e:
+                            self.log(f"   ⚠️ End frame upload failed: {e}")
+                    else:
+                        # Use start frame as end frame (avoids hardcoded filename error)
+                        try:
+                            set_image_input(workflow, node_map["end_frame_node_id"], start_name)
+                            self.log(f"   📎 End Frame: using Start Frame (loop mode)")
+                        except Exception as e:
+                            self.log(f"   ⚠️ End frame fallback failed: {e}")
                 
                 # Randomize seed
                 if node_map.get("sampler_node_id"):
