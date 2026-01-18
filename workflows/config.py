@@ -98,9 +98,9 @@ WORKFLOW_PATHS = {
 
 UPSCALE_CONFIG = {
     "enabled": True,                    # 업스케일 활성화 여부
-    "scale": 2,                         # 배율 (2 = 720p→1440p, 4 = 720p→4K)
+    "scale": 4,                         # 배율 (4x = 832x480 → 3328x1920)
     "model": "realesr-animevideov3",    # 모델명 (AI 생성 영상에 최적화)
-    "output_suffix": "_1440p",          # 출력 파일 접미사
+    "output_suffix": "_4K",             # 출력 파일 접미사
     "gpu_id": 0,                        # GPU ID
 }
 
