@@ -714,22 +714,25 @@ class SmartConcatenator:
             if seg['needs_transition']:
                 # xfade: offset = 현재까지 누적 길이 - 트랜지션 길이
                 offset = max(0, accumulated_duration - self.transition_duration)
+                trans_duration = self.transition_duration
                 
                 if self.transition_type == "crossfade":
                     filter_parts.append(
-                        f"{current_label}{next_input}xfade=transition=fade:duration={self.transition_duration}:offset={offset:.2f}{out_label}"
+                        f"{current_label}{next_input}xfade=transition=fade:duration={trans_duration}:offset={offset:.2f}{out_label}"
                     )
                 elif self.transition_type == "fade_black":
                     filter_parts.append(
-                        f"{current_label}{next_input}xfade=transition=fadeblack:duration={self.transition_duration}:offset={offset:.2f}{out_label}"
+                        f"{current_label}{next_input}xfade=transition=fadeblack:duration={trans_duration}:offset={offset:.2f}{out_label}"
                     )
                 
                 # 누적 시간 업데이트 (xfade는 겹치므로 트랜지션 길이만큼 빼기)
                 accumulated_duration = offset + video_duration
             else:
-                # 트랜지션 없이 concat
+                # 트랜지션 없이도 xfade 사용 (duration=0으로 즉시 전환)
+                # concat과 xfade 혼합 시 timebase 충돌 방지
+                offset = accumulated_duration
                 filter_parts.append(
-                    f"{current_label}{next_input}concat=n=2:v=1:a=0{out_label}"
+                    f"{current_label}{next_input}xfade=transition=fade:duration=0:offset={offset:.2f}{out_label}"
                 )
                 accumulated_duration += video_duration
             
