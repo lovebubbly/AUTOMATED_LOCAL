@@ -732,8 +732,9 @@ class SmartConcatenator:
         try:
             with open(list_file, 'w', encoding='utf-8') as f:
                 for seg in segments:
-                    # 경로의 백슬래시를 슬래시로 변경
-                    path_str = str(seg['path']).replace('\\', '/')
+                    # 절대 경로로 변환하고 백슬래시를 슬래시로 변경
+                    abs_path = Path(seg['path']).resolve()
+                    path_str = str(abs_path).replace('\\', '/')
                     f.write(f"file '{path_str}'\n")
             
             cmd = [
@@ -742,10 +743,34 @@ class SmartConcatenator:
                 "-c", "copy",
                 str(output_path)
             ]
-            subprocess.run(cmd, capture_output=True, check=True)
+            result = subprocess.run(cmd, capture_output=True)
+            if result.returncode != 0:
+                logger.error(f"Concat error: {result.stderr.decode()}")
+                # 폴백: 재인코딩 방식
+                self._concat_with_reencode(segments, output_path)
         finally:
             if list_file.exists():
                 list_file.unlink()
+    
+    def _concat_with_reencode(self, segments: list, output_path: Path) -> None:
+        """재인코딩 방식 concat (폴백용)."""
+        inputs = []
+        for seg in segments:
+            inputs.extend(["-i", str(seg['path'])])
+        
+        filter_str = "".join([f"[{i}:v]" for i in range(len(segments))]) + f"concat=n={len(segments)}:v=1:a=0[outv]"
+        
+        cmd = ["ffmpeg", "-y"]
+        cmd.extend(inputs)
+        cmd.extend([
+            "-filter_complex", filter_str,
+            "-map", "[outv]",
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "18",
+            str(output_path)
+        ])
+        subprocess.run(cmd, capture_output=True, check=True)
     
     def _xfade_groups(self, group_videos: list, output_path: Path) -> None:
         """그룹 간 xfade 적용."""
