@@ -98,6 +98,40 @@ def set_node_input(
     return workflow
 
 
+def remove_node_input(
+    workflow: dict, 
+    node_id: str, 
+    input_name: str
+) -> dict:
+    """
+    Remove an input from a specific node (for optional inputs).
+    
+    This is useful for removing optional inputs like 'end_image' in 
+    WanVideoVACEStartToEndFrame when Protocol B (Open Run) is used.
+    
+    Args:
+        workflow: Workflow dictionary (will be modified in place)
+        node_id: Target node ID
+        input_name: Name of the input to remove
+        
+    Returns:
+        Modified workflow dictionary
+    """
+    node_id = str(node_id)
+    if node_id not in workflow:
+        return workflow  # Node doesn't exist, skip silently
+    
+    node = workflow[node_id]
+    
+    # Handle different node structures
+    if "inputs" in node and input_name in node["inputs"]:
+        del node["inputs"][input_name]
+    elif input_name in node:
+        del node[input_name]
+    
+    return workflow
+
+
 def set_text_prompt(workflow: dict, node_id: str, prompt: str) -> dict:
     """
     Set text prompt for a CLIP Text Encode node.

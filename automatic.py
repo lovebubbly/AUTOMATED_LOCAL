@@ -546,12 +546,15 @@ class Director:
                 self.log(f"   ⚠️ Block {block_id}: Start frame not found, skipping...")
                 continue
             
+            # Get Protocol (A = Keyframe with End Frame, B = Open Run without End Frame)
+            protocol = str(row.get('Protocol', 'B')).strip().upper()
+            
             # Get motion prompt
             motion_prompt = str(row.get('Kling O1 (Motion Prompt)', ''))
             if not motion_prompt or motion_prompt.lower() == 'nan':
                 motion_prompt = "Smooth camera motion, cinematic movement"
             
-            self.log(f"🎬 Processing Video Block {block_id}...")
+            self.log(f"🎬 Processing Video Block {block_id} [Protocol {protocol}]...")
             self.log(f"   📝 Prompt: {motion_prompt[:60]}...")
             
             try:
@@ -567,6 +570,7 @@ class Director:
                     set_text_prompt(workflow, node_map["negative_prompt_node_id"], "")
                 
                 # Upload and set start frame
+                start_name = None
                 if node_map.get("start_frame_node_id"):
                     try:
                         start_name = self._client.upload_image(start_image_path)
@@ -575,23 +579,29 @@ class Director:
                     except Exception as e:
                         self.log(f"   ⚠️ Start frame upload failed: {e}")
                 
-                # Upload and set end frame
-                # If end frame doesn't exist, use start frame as end frame (for loop videos)
+                # Handle End Frame based on Protocol
                 if node_map.get("end_frame_node_id"):
-                    if os.path.exists(end_image_path):
-                        try:
-                            end_name = self._client.upload_image(end_image_path)
-                            set_image_input(workflow, node_map["end_frame_node_id"], end_name)
-                            self.log(f"   📎 End Frame uploaded")
-                        except Exception as e:
-                            self.log(f"   ⚠️ End frame upload failed: {e}")
+                    if protocol == 'A':
+                        # Protocol A: Use End Frame (Strict Keyframe)
+                        if os.path.exists(end_image_path):
+                            try:
+                                end_name = self._client.upload_image(end_image_path)
+                                set_image_input(workflow, node_map["end_frame_node_id"], end_name)
+                                self.log(f"   📎 End Frame uploaded (Protocol A)")
+                            except Exception as e:
+                                self.log(f"   ⚠️ End frame upload failed: {e}")
+                        else:
+                            # Protocol A but no end frame file - use start frame as fallback
+                            if start_name:
+                                set_image_input(workflow, node_map["end_frame_node_id"], start_name)
+                                self.log(f"   📎 End Frame: using Start Frame (Protocol A fallback)")
                     else:
-                        # Use start frame as end frame (avoids hardcoded filename error)
-                        try:
-                            set_image_input(workflow, node_map["end_frame_node_id"], start_name)
-                            self.log(f"   📎 End Frame: using Start Frame (loop mode)")
-                        except Exception as e:
-                            self.log(f"   ⚠️ End frame fallback failed: {e}")
+                        # Protocol B: Remove End Frame completely (Open Run)
+                        # Remove the end_image input from WanVideoVACEStartToEndFrame node
+                        from workflows import remove_node_input
+                        if node_map.get("vace_node_id"):
+                            remove_node_input(workflow, node_map["vace_node_id"], "end_image")
+                            self.log(f"   🔓 End Frame removed (Protocol B - Open Run)")
                 
                 # Randomize seed
                 if node_map.get("sampler_node_id"):
