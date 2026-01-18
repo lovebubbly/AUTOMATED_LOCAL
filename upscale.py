@@ -948,18 +948,20 @@ def smart_concat(
     csv_path: str,
     video_dir: str,
     output_filename: str = "final_smart.mp4",
-    transition_duration: float = 0.3
+    transition_duration: float = 0.3,
+    transition_type: str = "crossfade"
 ) -> str:
     """
     스마트 트랜지션 연결 간편 함수.
     
-    CSV를 분석하여 새 씬에만 크로스페이드를 적용합니다.
+    CSV를 분석하여 새 씬에만 트랜지션을 적용합니다.
     
     Args:
         csv_path: Production Table CSV 경로
         video_dir: 비디오 파일 디렉토리
         output_filename: 출력 파일명
         transition_duration: 트랜지션 길이 (초)
+        transition_type: "crossfade" (중첩, 길이 줄어듦) 또는 "fade_to_black" (길이 유지)
         
     Returns:
         출력 파일 경로
@@ -968,12 +970,15 @@ def smart_concat(
         >>> smart_concat(
         ...     csv_path="assets/production_table.csv",
         ...     video_dir="assets/images",
-        ...     output_filename="final_music_video.mp4"
+        ...     output_filename="final_music_video.mp4",
+        ...     transition_type="fade_to_black"  # 길이 유지
         ... )
     """
     smart = SmartConcatenator(
         csv_path=csv_path,
         video_dir=video_dir,
-        transition_duration=transition_duration
+        transition_duration=transition_duration,
+        transition_type=transition_type
     )
     return smart.concatenate_smart(output_filename)
+
