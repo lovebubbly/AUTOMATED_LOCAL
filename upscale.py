@@ -184,18 +184,29 @@ class VideoUpscaler:
         import torch
         from basicsr.archs.rrdbnet_arch import RRDBNet
         from realesrgan import RealESRGANer
+        from realesrgan.archs.srvgg_arch import SRVGGNetCompact
         
-        # Initialize model
+        # Initialize model - architecture must match the pretrained weights
         if self.model_name == "realesr-animevideov3":
+            # realesr-animevideov3 uses SRVGGNetCompact (VGG-style, NOT RRDBNet!)
+            model = SRVGGNetCompact(num_in_ch=3, num_out_ch=3, num_feat=64, num_conv=16, upscale=4, act_type='prelu')
+            netscale = 4
+            model_url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-animevideov3.pth"
+        elif self.model_name == "realesrgan-x4plus-anime":
             model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=6, num_grow_ch=32, scale=4)
             netscale = 4
+            model_url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth"
         else:
+            # Default: RealESRGAN_x4plus (23 blocks)
             model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
             netscale = 4
+            model_url = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth"
+        
+        logger.info(f"   Loading model: {self.model_name} (native scale: {netscale}x)")
         
         upsampler = RealESRGANer(
             scale=netscale,
-            model_path=None,  # Will auto-download
+            model_path=model_url,  # Auto-download from URL
             model=model,
             half=True,
             gpu_id=self.gpu_id
